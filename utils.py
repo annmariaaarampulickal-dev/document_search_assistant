@@ -1,25 +1,46 @@
-def split_text_into_chunks(text: str, chunk_size: int = 500, overlap: int = 100):
-    """
-    Splits a long string of text into smaller chunks of approximately 'chunk_size'
-    characters, with a sliding window 'overlap' so thoughts aren't cut in half.
-    """
-    chunks = []
-    start = 0
-    text_length = len(text)
+import nltk
  
-    # If the text is shorter than our chunk size, just return it as a single chunk
-    if text_length <= chunk_size:
-        return [text.strip()] if text.strip() else []
+# Ensure the sentence tokenizer punctuation data is downloaded
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
  
-    while start < text_length:
-        # Define where the chunk ends
-        end = start + chunk_size
-        chunk = text[start:end]
+def split_text_into_chunks(text: str, chunk_size: int = 500, overlap: int = 100) -> list[str]:
+    """
+    Improved chunking: Uses NLTK sentence boundaries, using your
+    original parameter names (chunk_size, overlap) for system compatibility.
+    """
+    if not text or text.isspace():
+        return []
         
-        if chunk.strip():
-            chunks.append(chunk.strip())
+    # 1. Break the raw text into complete sentences
+    sentences = nltk.sent_tokenize(text)
+    
+    chunks = []
+    current_chunk = []
+    current_length = 0
+    
+    # SAFEGUARD: Because your API passes character overlap (e.g., 100),
+    # we convert it to a sentence-count overlap (1 sentence) for this logic.
+    sentence_overlap = 1 if overlap > 0 else 0
+ 
+    for sentence in sentences:
+        sentence_len = len(sentence)
+        
+        # 2. Check if adding this sentence exceeds your chunk_size
+        if current_length + sentence_len > chunk_size and current_chunk:
+            chunks.append(" ".join(current_chunk).strip())
             
-        # Move our starting window forward by chunk_size MINUS the overlap
-        start += (chunk_size - overlap)
+            # 3. Step back by 1 sentence for the overlap context
+            current_chunk = current_chunk[-sentence_overlap:] if sentence_overlap > 0 else []
+            current_length = sum(len(s) for s in current_chunk)
+        
+        current_chunk.append(sentence)
+        current_length += sentence_len
+        
+    # 4. Grab any leftover sentences at the end
+    if current_chunk:
+        chunks.append(" ".join(current_chunk).strip())
         
     return chunks
