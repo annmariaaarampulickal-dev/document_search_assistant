@@ -139,3 +139,65 @@ def get_document_chunks(id: int):
             )
             return cur.fetchall()
  
+
+# =====================================================================
+# NEW ADDITION: POST /ask Endpoint using NumPy Cosine Similarity
+# =====================================================================
+from pydantic import BaseModel
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from psycopg.rows import dict_row
+ 
+# Define the input schema for the endpoint
+class QuestionRequest(BaseModel):
+    question: str
+ 
+# Re-initialize the model globally here if it's not at the top of your file
+model = SentenceTransformer("all-MiniLM-L6-v2")
+ 
+@app.post("/ask")
+async def ask_question(request: QuestionRequest):
+    if not request.question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
+ 
+    try:
+        # Step 1: Turn the live user question into an embedding vector
+        query_embedding = model.encode(request.question)
+ 
+        # Step 2: Grab ALL chunks currently sitting in your live database
+        with get_db_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("""
+                    SELECT dc.chunk_text, dc.page_number, d.filename
+                    FROM document_chunks dc
+                    JOIN documents d ON dc.document_id = d.id
+                """)
+                stored_chunks = cur.fetchall()
+ 
+        if not stored_chunks:
+            return {"top_3_chunks": [], "message": "No document chunks found in database. Please upload a PDF first."}
+ 
+        # Step 3: Extract texts and generate vector embeddings for them
+        texts = [row["chunk_text"] for row in stored_chunks]
+        chunk_embeddings = model.encode(texts)
+        
+        # Step 4: Calculate Cosine Similarity via NumPy Dot Product
+        # (This is the "couple of lines" mentioned in the assignment tip!)
+        scores = np.dot(chunk_embeddings, query_embedding)
+        
+        # Step 5: Extract the top 3 highest scoring indices (reversing to descending order)
+        top_indices = np.argsort(scores)[-3:][::-1]
+ 
+        # Step 6: Package the exact matches from your uploaded file
+        unique_results = []
+        for idx in top_indices:
+            unique_results.append({
+                "file_name": stored_chunks[idx]["filename"],
+                "page_number": stored_chunks[idx]["page_number"],
+                "text": stored_chunks[idx]["chunk_text"]
+            })
+ 
+        return {"top_3_chunks": unique_results}
+ 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
