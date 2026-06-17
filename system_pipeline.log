@@ -1,0 +1,3 @@
+2026-06-17 16:17:53,729 [INFO] Initializing system workspace resources...
+2026-06-17 16:17:53,730 [INFO] Loaded existing FAISS index containing 55 vectors from disk.
+2026-06-17 16:22:07,677 [INFO] 1 change detected

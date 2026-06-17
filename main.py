@@ -1,18 +1,29 @@
 import os
 import faiss
 import pickle
-import fitz  # PyMuPDF
+import logging  # NEW FEATURE REQUIREMENT
+import fitz # PyMuPDF
 import psycopg
 from fastapi import FastAPI, HTTPException, status, File, UploadFile
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 from psycopg.rows import dict_row
  
-# Import your custom database helper
+# Import your exact custom database helpers and chunking tools
 from database import get_db_connection
 from utils import split_text_into_chunks
  
-# 1. Initialize the FastAPI web application and Embedding Model
+# 1. SETUP PYTHON LOGGING HANDLERS (Saves to file and streams to command terminal console)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("app_system.log"),
+        logging.StreamHandler()
+    ]
+)
+ 
+# Initialize the FastAPI web application and Embedding Model exactly as before
 app = FastAPI(title="Document Search Assistant")
 model = SentenceTransformer("all-MiniLM-L6-v2")
  
@@ -27,15 +38,15 @@ class DocumentCreate(BaseModel):
 class QuestionRequest(BaseModel):
     question: str
  
- 
 @app.get("/")
 def read_root():
+    logging.info("Root base API verification check pinged.")
     return {"message": "Welcome to the Document Search Assistant API!"}
- 
  
 # 2. POST /documents - Add a new document record safely
 @app.post("/documents", status_code=status.HTTP_201_CREATED)
 def create_document(payload: DocumentCreate):
+    logging.info(f"Manually creating database entry record for: '{payload.filename}'")
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -45,65 +56,85 @@ def create_document(payload: DocumentCreate):
                 )
                 new_doc = cur.fetchone()
                 conn.commit()
+                logging.info(f"Manual entry saved successfully with assigned attributes: {new_doc}")
                 return new_doc
     except psycopg.OperationalError as e:
+        logging.error(f"Database access failure during manual document entry registration: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Database connection error: {e}"
         )
  
- 
 # 3. GET /documents - List all documents
 @app.get("/documents")
 def list_documents():
+    logging.info("Retrieving full registry list of all cataloged documents.")
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM documents ORDER BY upload_date DESC;")
                 return cur.fetchall()
-    except psycopg.OperationalError:
+    except psycopg.OperationalError as e:
+        logging.error(f"Database list retrieval dropped connection link: {e}")
         raise HTTPException(status_code=500, detail="Database connection failed.")
- 
  
 # 4. GET /documents/{id} - Get a single document by its ID
 @app.get("/documents/{id}")
 def get_document(id: int):
+    logging.info(f"Targeted inquiry lookup for Document Registry ID: {id}")
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM documents WHERE id = %s;", (id,))
             doc = cur.fetchone()
             if not doc:
+                logging.warning(f"Lookup aborted: Document tracking ID {id} not present in database.")
                 raise HTTPException(status_code=404, detail="Document not found")
             return doc
- 
  
 # 5. DELETE /documents/{id} - Delete a document record
 @app.delete("/documents/{id}")
 def delete_document(id: int):
+    logging.info(f"Targeted deletion execution request for Document ID: {id}")
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM documents WHERE id = %s;", (id,))
             if not cur.fetchone():
+                logging.error(f"Deletion failed: Target ID {id} does not map to any known database record.")
                 raise HTTPException(status_code=404, detail="Document not found")
  
             cur.execute("DELETE FROM documents WHERE id = %s;", (id,))
             conn.commit()
+            logging.info(f"Document ID {id} text strings wiped out from PostgreSQL storage tables.")
             return {"message": f"Document {id} successfully deleted"}
- 
  
 # 6. POST /documents/upload - Accept PDF, chunk text, and dynamically update FAISS
 @app.post("/documents/upload", status_code=status.HTTP_201_CREATED)
 async def upload_document(file: UploadFile = File(...)):
-    if not file.filename.endswith('.pdf'):
+    logging.info(f"Incoming storage network packet processing for document file: '{file.filename}'")
+    
+    # REQUIREMENT ERROR HANDLING GUARD A: Verify file extension type matches PDF bounds
+    if not file.filename.lower().endswith('.pdf'):
+        logging.error(f"Processing Aborted: File '{file.filename}' is not a valid PDF file container.")
         raise HTTPException(status_code=400, detail="Only PDF files are supported!")
  
     try:
         file_bytes = await file.read()
+        
+        # REQUIREMENT ERROR HANDLING GUARD B: Block empty 0-byte file stream allocations
+        if len(file_bytes) == 0:
+            logging.error(f"Processing Aborted: Incoming stream package for '{file.filename}' contains 0 bytes.")
+            raise HTTPException(status_code=400, detail="The uploaded PDF file is empty and cannot be indexed.")
+ 
         pdf = fitz.open(stream=file_bytes, filetype="pdf")
+        
+        # REQUIREMENT ERROR HANDLING GUARD C: Verify PDF contains readable pages with extractable characters
+        if len(pdf) == 0:
+            logging.error(f"Processing Aborted: Document structure '{file.filename}' contains 0 printable pages.")
+            raise HTTPException(status_code=400, detail="The uploaded file contains no readable document layout pages.")
  
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # Insert master record
+                # Insert master record exactly as you designed it
                 cur.execute(
                     "INSERT INTO documents (filename) VALUES (%s) RETURNING id;",
                     (file.filename,)
@@ -114,12 +145,12 @@ async def upload_document(file: UploadFile = File(...)):
                 new_chunks_texts = []
                 inserted_chunk_ids = []
  
-                # Loop through pages page by page
+                # Loop through pages page by page using your exact loop logic
                 for page_idx, page in enumerate(pdf):
                     page_number = page_idx + 1
                     page_text = page.get_text()
  
-                    # Split page text into overlapping segments
+                    # Split page text into overlapping segments using your custom token utils
                     page_chunks = split_text_into_chunks(page_text, chunk_size=500, overlap=100)
  
                     # Save each small chunk into the database and collect values for FAISS
@@ -140,15 +171,16 @@ async def upload_document(file: UploadFile = File(...)):
  
         # DYNAMIC FAISS LOGIC: Update vector index files immediately on upload
         if new_chunks_texts:
+            logging.info(f"Vectorizing {len(new_chunks_texts)} extracted text chunks via SentenceTransformers.")
             new_vectors = model.encode(new_chunks_texts)
-            
+ 
             # Load existing FAISS components or build a fresh base if missing
             if os.path.exists(FAISS_INDEX_FILE) and os.path.exists(PKL_MAPPING_FILE):
                 index = faiss.read_index(FAISS_INDEX_FILE)
                 with open(PKL_MAPPING_FILE, "rb") as f:
                     chunk_ids = pickle.load(f)
             else:
-                index = faiss.IndexFlatL2(384)  # 384 is the MiniLM dimension
+                index = faiss.IndexFlatL2(384) # 384 is the MiniLM dimension
                 chunk_ids = []
  
             # Append the fresh vectors and associate them with database primary keys
@@ -160,6 +192,7 @@ async def upload_document(file: UploadFile = File(...)):
             with open(PKL_MAPPING_FILE, "wb") as f:
                 pickle.dump(chunk_ids, f)
  
+        logging.info(f"Successfully processed, vectorized, and index-mapped file: {file.filename}")
         return {
             "message": f"Successfully processed '{file.filename}' and updated FAISS index dynamically.",
             "document_id": doc_id,
@@ -167,17 +200,21 @@ async def upload_document(file: UploadFile = File(...)):
             "total_chunks_saved": len(new_chunks_texts)
         }
  
+    except HTTPException as he:
+        raise he
     except Exception as e:
+        logging.critical(f"Unexpected processing system breakdown running data ingestion: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to process PDF: {str(e)}")
- 
  
 # 7. GET /documents/{id}/chunks - See all processed text chunks for a document
 @app.get("/documents/{id}/chunks")
 def get_document_chunks(id: int):
+    logging.info(f"Requesting exhaustive list of structural text chunks for Document ID: {id}")
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM documents WHERE id = %s;", (id,))
             if not cur.fetchone():
+                logging.warning(f"Chunks lookup cancelled: ID {id} does not map to an existing record.")
                 raise HTTPException(status_code=404, detail="Document not found")
  
             cur.execute(
@@ -186,11 +223,13 @@ def get_document_chunks(id: int):
             )
             return cur.fetchall()
  
- 
 # 8. POST /ask - Semantic Search Endpoint routing requests through FAISS
 @app.post("/ask")
 async def ask_question(request: QuestionRequest):
+    logging.info(f"Running semantic search query for query input: '{request.question}'")
+    
     if not os.path.exists(FAISS_INDEX_FILE) or not os.path.exists(PKL_MAPPING_FILE):
+        logging.warning("Search halted: Local indices files missing from directory cache.")
         return {"top_3_chunks": [], "message": "No vector system indexed yet. Please upload files first."}
  
     try:
@@ -199,20 +238,21 @@ async def ask_question(request: QuestionRequest):
         with open(PKL_MAPPING_FILE, "rb") as f:
             chunk_ids = pickle.load(f)
  
-        # Vector conversion and querying via FAISS
+        # Vector conversion and querying via FAISS using your exact model call
         query_vector = model.encode([request.question])
         distances, indices = index.search(query_vector, 15)
         matched_db_ids = [chunk_ids[idx] for idx in indices[0] if idx != -1]
  
         if not matched_db_ids:
+            logging.info(f"No coordinate boundaries located inside FAISS space for string query: '{request.question}'")
             return {"top_3_chunks": []}
  
-        # Query the operational database maintaining tracking order
+        # Query the operational database maintaining tracking order via your custom SQL sorting parameters
         with get_db_connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 format_ids = ", ".join(str(idx) for idx in matched_db_ids)
                 query_sql = f"""
-                    SELECT dc.chunk_text, dc.page_number, d.filename
+                    SELECT dc.chunk_text, dc.page_number, d.filename, dc.id
                     FROM document_chunks dc
                     JOIN documents d ON dc.document_id = d.id
                     WHERE dc.id IN ({format_ids})
@@ -221,10 +261,15 @@ async def ask_question(request: QuestionRequest):
                 cur.execute(query_sql)
                 raw_results = cur.fetchall()
  
-        # Text stream de-duplication strategy
+        # Text stream de-duplication strategy exactly as you designed it
         unique_results = []
         seen_texts = set()
+        
         for row in raw_results:
+            # REQUIREMENT UNKNOWN ID FILTER: Safely skip ghost entries if they are removed from SQL
+            if not row:
+                continue
+                
             cleaned_text = " ".join(row['chunk_text'].split())
             if cleaned_text not in seen_texts:
                 seen_texts.add(cleaned_text)
@@ -233,9 +278,12 @@ async def ask_question(request: QuestionRequest):
                     "page_number": row['page_number'],
                     "text": row['chunk_text']
                 })
-            if len(unique_results) == 3:
-                break
+                if len(unique_results) == 3:
+                    break
  
+        logging.info(f"Successfully located {len(unique_results)} relevant citations for query input.")
         return {"top_3_chunks": unique_results}
+        
     except Exception as e:
+        logging.error(f"Search retrieval execution circuit failure: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Search pipeline broken: {str(e)}")
