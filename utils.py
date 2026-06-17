@@ -21,7 +21,7 @@ def split_text_into_chunks(text: str, chunk_size: int = 500, overlap: int = 100)
     current_chunk = []
     current_length = 0
     
-    # SAFEGUARD: Because your API passes character overlap (e.g., 100),
+    # SAFEGUARD: Because your API passes character overlap 
     # we convert it to a sentence-count overlap (1 sentence) for this logic.
     sentence_overlap = 1 if overlap > 0 else 0
  
