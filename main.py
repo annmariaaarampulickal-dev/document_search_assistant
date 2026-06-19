@@ -99,14 +99,41 @@ def delete_document(id: int):
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM documents WHERE id = %s;", (id,))
             if not cur.fetchone():
-                logging.error(f"Deletion failed: Target ID {id} does not map to any known database record.")
                 raise HTTPException(status_code=404, detail="Document not found")
- 
+
+            # Delete from Postgres — ON DELETE CASCADE removes chunks automatically
             cur.execute("DELETE FROM documents WHERE id = %s;", (id,))
             conn.commit()
-            logging.info(f"Document ID {id} text strings wiped out from PostgreSQL storage tables.")
-            return {"message": f"Document {id} successfully deleted"}
- 
+            logging.info(f"Document ID {id} deleted from Postgres.")
+
+            # Rebuild FAISS from whatever chunks still remain in the database
+            cur.execute("SELECT id, chunk_text FROM document_chunks ORDER BY id;")
+            remaining_chunks = cur.fetchall()
+
+    if remaining_chunks:
+        logging.info(f"Rebuilding FAISS index with {len(remaining_chunks)} remaining chunks.")
+        texts = [row["chunk_text"] for row in remaining_chunks]
+        ids = [row["id"] for row in remaining_chunks]
+
+        new_vectors = model.encode(texts,normalize_embeddings=True)
+        new_index = faiss.IndexFlatIP(384)
+        new_index.add(new_vectors)
+
+        faiss.write_index(new_index, FAISS_INDEX_FILE)
+        with open(PKL_MAPPING_FILE, "wb") as f:
+            pickle.dump(ids, f)
+
+        logging.info("FAISS index rebuilt and saved successfully.")
+    else:
+        # No chunks left at all — delete the files entirely so /ask
+        # correctly returns "no index yet" rather than searching an empty index
+        if os.path.exists(FAISS_INDEX_FILE):
+            os.remove(FAISS_INDEX_FILE)
+        if os.path.exists(PKL_MAPPING_FILE):
+            os.remove(PKL_MAPPING_FILE)
+        logging.info("No chunks remaining — FAISS index files cleared.")
+
+    return {"message": f"Document {id} successfully deleted and FAISS index updated."}
 # 6. POST /documents/upload - Accept PDF, chunk text, and dynamically update FAISS
 @app.post("/documents/upload", status_code=status.HTTP_201_CREATED)
 async def upload_document(file: UploadFile = File(...)):
@@ -168,11 +195,21 @@ async def upload_document(file: UploadFile = File(...)):
                         chunk_order += 1
  
                 conn.commit()
+
+            conn.commit()
+
+        # REQUIREMENT ERROR HANDLING GUARD D: Block scanned image-only PDFs with no extractable text
+        if not new_chunks_texts:
+            logging.error(f"Processing Aborted: '{file.filename}' contains no extractable text content.")
+            raise HTTPException(
+                status_code=400,
+                detail="The PDF contains no extractable text. It may be a scanned image-only PDF."
+            )
  
         # DYNAMIC FAISS LOGIC: Update vector index files immediately on upload
         if new_chunks_texts:
             logging.info(f"Vectorizing {len(new_chunks_texts)} extracted text chunks via SentenceTransformers.")
-            new_vectors = model.encode(new_chunks_texts)
+            new_vectors = model.encode(new_chunks_texts,normalize_embeddings=True)
  
             # Load existing FAISS components or build a fresh base if missing
             if os.path.exists(FAISS_INDEX_FILE) and os.path.exists(PKL_MAPPING_FILE):
@@ -180,7 +217,7 @@ async def upload_document(file: UploadFile = File(...)):
                 with open(PKL_MAPPING_FILE, "rb") as f:
                     chunk_ids = pickle.load(f)
             else:
-                index = faiss.IndexFlatL2(384) # 384 is the MiniLM dimension
+                index = faiss.IndexFlatIP(384) # 384 is the MiniLM dimension
                 chunk_ids = []
  
             # Append the fresh vectors and associate them with database primary keys
@@ -239,7 +276,7 @@ async def ask_question(request: QuestionRequest):
             chunk_ids = pickle.load(f)
  
         # Vector conversion and querying via FAISS using your exact model call
-        query_vector = model.encode([request.question])
+        query_vector = model.encode([request.question],normalize_embeddings=True)
         distances, indices = index.search(query_vector, 15)
         matched_db_ids = [chunk_ids[idx] for idx in indices[0] if idx != -1]
  

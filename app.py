@@ -2,12 +2,12 @@ import streamlit as st
 import requests
  
 st.set_page_config(
-    page_title="FAISS Document Search Assistant",
+    page_title=" Document Search Assistant",
     page_icon="🔍",
     layout="wide"
 )
  
-st.title("🔍 FAISS Document Search Assistant")
+st.title("🔍 Document Search Assistant")
 st.markdown("Query your uploaded documents using advanced semantic FAISS index search mapping.")
  
 # --- SIDEBAR CONTROL PANEL ---
@@ -52,7 +52,7 @@ if uploaded_files:
 st.write("---")
  
 # --- CONSOLE SEMANTIC ENTRY SEARCH BAR ---
-st.header("🔍 Search Documents via FAISS Index")
+st.header("🔍 Search Documents ")
 query_text = st.text_input("🤔 What information are you looking for?", key="query")
  
 if query_text:

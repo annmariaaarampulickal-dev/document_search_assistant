@@ -1,11 +1,18 @@
 import psycopg
+import os
 from psycopg.rows import dict_row
- 
-# Database connection details
-# Replace 'your_password' with the master password you created for pgAdmin!
-DB_PARAMS = "dbname=document_db user=postgres password=root host=localhost port=5432"
- 
+from dotenv import load_dotenv
+
+# Loads the .env file into environment variables
+load_dotenv()
+
 def get_db_connection():
-    """Creates and returns a fresh connection to our PostgreSQL database."""
-    conn = psycopg.connect(DB_PARAMS, row_factory=dict_row)
+    conn = psycopg.connect(
+        dbname=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        host=os.getenv("DB_HOST"),
+        port=os.getenv("DB_PORT"),
+        row_factory=dict_row
+    )
     return conn
