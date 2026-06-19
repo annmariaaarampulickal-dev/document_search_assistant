@@ -353,4 +353,4 @@ Covers: chunk size limits, sentence-level overlap behavior.
 - Add pagination to the documents list endpoint (`LIMIT` / `OFFSET`)
 - Add a connection pool using `psycopg_pool.ConnectionPool`
 - Add `response_model` schemas to FastAPI endpoints for validated, documented output shapes
-- Add a submit button to the Streamlit search box to avoid firing a search request on every keystroke
+
