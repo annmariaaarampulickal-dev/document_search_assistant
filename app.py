@@ -52,13 +52,16 @@ if uploaded_files:
 st.write("---")
  
 # --- CONSOLE SEMANTIC ENTRY SEARCH BAR ---
+# --- CONSOLE SEMANTIC ENTRY SEARCH BAR ---
 st.header("🔍 Search Documents ")
-query_text = st.text_input("🤔 What information are you looking for?", key="query")
- 
-if query_text:
+
+with st.form("search_form"):
+    query_text = st.text_input("🤔 What information are you looking for?", key="query")
+    submitted = st.form_submit_button("🔍 Search")
+
+if submitted and query_text:
     with st.spinner("Executing FAISS Semantic Search Mapping..."):
         try:
-            # Matches your exact QuestionRequest Pydantic structure
             response = requests.post("http://127.0.0.1:8000/ask", json={"question": query_text})
             
             if response.status_code == 200:
