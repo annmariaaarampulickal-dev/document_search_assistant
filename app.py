@@ -26,12 +26,18 @@ if st.sidebar.button("🗑️ Reset Entire Vector System", type="primary"):
     except Exception as e:
         st.sidebar.error(f"System communication connection crash error: {e}")
  
-# --- DOCUMENT UPLOADER CONTAINER BAR ---
 st.header("📄 Upload Documents")
+st.info("ℹ️ Only PDF files are accepted. Other file types will be automatically rejected.")
+
+# Add a reset button
+if st.button("🔄 Clear Uploader"):
+    st.session_state["file_uploader_key"] = st.session_state.get("file_uploader_key", 0) + 1
+
 uploaded_files = st.file_uploader(
     "Choose PDF files to store and index into FAISS",
     type=["pdf"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key=f"uploader_{st.session_state.get('file_uploader_key', 0)}"
 )
  
 if uploaded_files:
