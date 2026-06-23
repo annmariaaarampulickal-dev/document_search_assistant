@@ -7,7 +7,10 @@ WORKDIR /app
 # Copy requirements first (for Docker layer caching)
 COPY requirements.txt .
  
-# Install dependencies
+# 1. First install CPU-only PyTorch and ML libraries cleanly
+RUN pip install --no-cache-dir torch==2.12.0+cpu transformers==5.9.0 sentence-transformers==5.5.1 --extra-index-url https://download.pytorch.org/whl/cpu
+
+# 2. Install remaining core dependencies
 RUN pip install --no-cache-dir -r requirements.txt
  
 # Download NLTK punkt tokenizer
@@ -23,5 +26,4 @@ COPY .env .
 EXPOSE 8000
  
 # Start FastAPI
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
- 
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

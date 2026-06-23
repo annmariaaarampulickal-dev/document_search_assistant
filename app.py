@@ -1,31 +1,36 @@
 import streamlit as st
 import requests
- 
+import os
+
+# --- DOCKER NETWORK RESOLUTION ---
+# Fallback to 127.0.0.1 if BACKEND_URL isn't explicitly set in your environment
+BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+
 st.set_page_config(
     page_title=" Document Search Assistant",
     page_icon="🔍",
     layout="wide"
 )
- 
+
 st.title("🔍 Document Search Assistant")
 st.markdown("Query your uploaded documents using advanced semantic FAISS index search mapping.")
- 
+
 # --- SIDEBAR CONTROL PANEL ---
 st.sidebar.header("⚙️ System Management")
 st.sidebar.markdown("Use this panel to clean out your workspace files or reset database tracking registries.")
- 
+
 if st.sidebar.button("🗑️ Reset Entire Vector System", type="primary"):
     try:
-        get_res = requests.get("http://127.0.0.1:8000/documents")
+        get_res = requests.get(f"{BACKEND_URL}/documents")
         if get_res.status_code == 200:
             for doc in get_res.json():
                 # Supports dictionary parsing safely
                 doc_id = doc.get("id") if isinstance(doc, dict) else doc[0]
-                requests.delete(f"http://127.0.0.1:8000/documents/{doc_id}")
+                requests.delete(f"{BACKEND_URL}/documents/{doc_id}")
         st.sidebar.success("Database records cleared successfully!")
     except Exception as e:
         st.sidebar.error(f"System communication connection crash error: {e}")
- 
+
 st.header("📄 Upload Documents")
 st.info("ℹ️ Only PDF files are accepted. Other file types will be automatically rejected.")
 
@@ -39,14 +44,14 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True,
     key=f"uploader_{st.session_state.get('file_uploader_key', 0)}"
 )
- 
+
 if uploaded_files:
     if st.button("Upload All Files to FAISS"):
         for uploaded_file in uploaded_files:
             with st.spinner(f"Index parsing {uploaded_file.name}..."):
                 try:
                     files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
-                    res = requests.post("http://127.0.0.1:8000/documents/upload", files=files)
+                    res = requests.post(f"{BACKEND_URL}/documents/upload", files=files)
                     
                     if res.status_code == 201:
                         st.success(f"✅ Successfully Indexed into FAISS: {uploaded_file.name}")
@@ -54,10 +59,9 @@ if uploaded_files:
                         st.error(f"❌ Upload Error on {uploaded_file.name}: {res.json().get('detail', res.text)}")
                 except Exception as e:
                     st.error(f"Unable to reach the FastAPI server connection: {e}")
- 
+
 st.write("---")
- 
-# --- CONSOLE SEMANTIC ENTRY SEARCH BAR ---
+
 # --- CONSOLE SEMANTIC ENTRY SEARCH BAR ---
 st.header("🔍 Search Documents ")
 
@@ -68,7 +72,7 @@ with st.form("search_form"):
 if submitted and query_text:
     with st.spinner("Executing FAISS Semantic Search Mapping..."):
         try:
-            response = requests.post("http://127.0.0.1:8000/ask", json={"question": query_text})
+            response = requests.post(f"{BACKEND_URL}/ask", json={"question": query_text})
             
             if response.status_code == 200:
                 unique_results = response.json().get("top_3_chunks", [])

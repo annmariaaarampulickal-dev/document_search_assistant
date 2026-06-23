@@ -13,7 +13,8 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d document_db"]
       interval: 5s
@@ -47,7 +48,8 @@ services:
       dockerfile: Dockerfile.frontend
     container_name: streamlit_frontend
     environment:
-      BACKEND_URL: http://backend:8000
+      BACKEND_URL: http://fastapi_backend:8000  
+    
     ports:
       - "8501:8501"
     depends_on:
