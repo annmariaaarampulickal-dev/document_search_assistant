@@ -1,9 +1,9 @@
 import psycopg
 import os
 from psycopg.rows import dict_row
+from pgvector.psycopg import register_vector
 from dotenv import load_dotenv
 
-# Loads the .env file into environment variables
 load_dotenv()
 
 def get_db_connection():
@@ -15,4 +15,5 @@ def get_db_connection():
         port=os.getenv("DB_PORT"),
         row_factory=dict_row
     )
+    register_vector(conn)
     return conn

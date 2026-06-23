@@ -1,0 +1,60 @@
+version: "3.9"
+ 
+services:
+ 
+  # PostgreSQL with pgvector
+  db:
+    image: pgvector/pgvector:pg18-trixie
+    container_name: pgvector_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: document_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d document_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+ 
+  # FastAPI backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: fastapi_backend
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: document_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/app
+ 
+  # Streamlit frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: streamlit_frontend
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - backend
+    volumes:
+      - .:/app
+ 
+volumes:
+  pgdata:
+ 
