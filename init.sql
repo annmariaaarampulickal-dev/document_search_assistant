@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- 2. Create the documents table matching your backend's RETURNING clause
 CREATE TABLE IF NOT EXISTS documents (
     id SERIAL PRIMARY KEY,
-    filename VARCHAR(255) NOT NULL,
+    filename TEXT NOT NULL,
     upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
