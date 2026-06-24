@@ -1,6 +1,8 @@
 import logging
 import fitz # PyMuPDF
 import psycopg
+import httpx
+import os
 from fastapi import FastAPI, HTTPException, status, File, UploadFile
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
@@ -22,6 +24,9 @@ logging.basicConfig(
 # Initialize the FastAPI web application and Embedding Model
 app = FastAPI(title="Document Search Assistant")
 model = SentenceTransformer("all-MiniLM-L6-v2")
+
+# OpenAI API Key from environment variable
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Schemas for incoming request data
 class DocumentCreate(BaseModel):
@@ -151,7 +156,7 @@ async def upload_document(file: UploadFile = File(...)):
                         cur.execute(
                             """
                             INSERT INTO document_chunks
-                                (document_id, chunk_text, chunk_order, page_number, embedding)
+                            (document_id, chunk_text, chunk_order, page_number, embedding)
                             VALUES (%s, %s, %s, %s, %s)
                             RETURNING id;
                             """,
@@ -201,7 +206,7 @@ def get_document_chunks(id: int):
             )
             return cur.fetchall()
 
-# 8. POST /ask - Semantic Search Endpoint using pgvector cosine similarity
+# 8. POST /ask - Semantic Search Endpoint using pgvector cosine similarity (UNCHANGED)
 @app.post("/ask")
 async def ask_question(request: QuestionRequest):
     logging.info(f"Running semantic search query for query input: '{request.question}'")
@@ -266,3 +271,115 @@ async def ask_question(request: QuestionRequest):
     except Exception as e:
         logging.error(f"Search retrieval execution circuit failure: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Search pipeline broken: {str(e)}")
+
+
+# 9. POST /ask-ai - NEW: AI-powered answer using top passages as context
+@app.post("/ask-ai")
+async def ask_ai(request: QuestionRequest):
+    logging.info(f"AI answer generation requested for query: '{request.question}'")
+
+    if not request.question or not request.question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    if not OPENAI_API_KEY:
+        logging.error("OPENAI_API_KEY is not set in environment variables.")
+        raise HTTPException(status_code=500, detail="AI service is not configured. OPENAI_API_KEY missing.")
+
+    try:
+        # Step 1: Re-use the same semantic search to get top 3 passages
+        query_embedding = model.encode(
+            request.question,
+            normalize_embeddings=True
+        ).tolist()
+
+        with get_db_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        dc.chunk_text,
+                        dc.page_number,
+                        d.filename,
+                        1 - (dc.embedding <=> %s::vector) AS similarity_score
+                    FROM document_chunks dc
+                    JOIN documents d ON dc.document_id = d.id
+                    WHERE dc.embedding IS NOT NULL
+                    ORDER BY dc.embedding <=> %s::vector
+                    LIMIT 15;
+                    """,
+                    (query_embedding, query_embedding)
+                )
+                raw_results = cur.fetchall()
+
+        if not raw_results:
+            raise HTTPException(status_code=404, detail="No documents found. Please upload documents first.")
+
+        # Step 2: Deduplicate and take top 3 passages
+        unique_chunks = []
+        seen_texts = set()
+        for row in raw_results:
+            cleaned_text = " ".join(row['chunk_text'].split())
+            if cleaned_text not in seen_texts:
+                seen_texts.add(cleaned_text)
+                unique_chunks.append(row)
+            if len(unique_chunks) == 3:
+                break
+
+        # Step 3: Build context string from the top passages
+        context_parts = []
+        for i, chunk in enumerate(unique_chunks, start=1):
+            context_parts.append(
+                f"[Passage {i} — {chunk['filename']}, page {chunk['page_number']}]\n{chunk['chunk_text'].strip()}"
+            )
+        context = "\n\n".join(context_parts)
+
+        # Step 4: Call OpenAI API with context + question
+        prompt = (
+            f"You are a helpful assistant. Answer the user's question using ONLY the document passages provided below. "
+            f"If the answer is not in the passages, say 'I could not find the answer in the uploaded documents.'\n\n"
+            f"Document Passages:\n{context}\n\n"
+            f"Question: {request.question}\n\n"
+            f"Answer:"
+        )
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            ai_response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "gpt-3.5-turbo",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 500,
+                    "temperature": 0.2
+                }
+            )
+
+        if ai_response.status_code != 200:
+            logging.error(f"OpenAI API returned error: {ai_response.text}")
+            raise HTTPException(status_code=502, detail="AI service returned an error. Please try again.")
+
+        ai_answer = ai_response.json()["choices"][0]["message"]["content"].strip()
+        logging.info("AI answer generated successfully.")
+
+        return {
+            "ai_answer": ai_answer,
+            "sources_used": [
+                {"file_name": c['filename'], "page_number": c['page_number']}
+                for c in unique_chunks
+            ]
+        }
+
+    except HTTPException as he:
+        raise he
+    except httpx.ConnectError:
+        logging.error("Could not connect to OpenAI API — network may be restricted.")
+        raise HTTPException(status_code=503, detail="Could not connect to AI service. Network may be restricted.")
+    except httpx.TimeoutException:
+        logging.error("OpenAI API request timed out.")
+        raise HTTPException(status_code=504, detail="AI service timed out. Please try again.")
+    except Exception as e:
+        logging.critical(f"Unexpected error in /ask-ai endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI processing failed: {str(e)}")
