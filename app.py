@@ -14,21 +14,6 @@ st.set_page_config(
 st.title("🔍 Document Search Assistant")
 st.markdown("Query your uploaded documents using advanced semantic pgvector search.")
 
-# --- SIDEBAR CONTROL PANEL ---
-st.sidebar.header("⚙️ System Management")
-st.sidebar.markdown("Use this panel to clean out your workspace files or reset database tracking registries.")
-
-if st.sidebar.button("🗑️ Reset Entire Vector System", type="primary"):
-    try:
-        get_res = requests.get(f"{BACKEND_URL}/documents")
-        if get_res.status_code == 200:
-            for doc in get_res.json():
-                doc_id = doc.get("id") if isinstance(doc, dict) else doc[0]
-                requests.delete(f"{BACKEND_URL}/documents/{doc_id}")
-        st.sidebar.success("Database records cleared successfully!")
-    except Exception as e:
-        st.sidebar.error(f"System communication connection crash error: {e}")
-
 st.header("📄 Upload Documents")
 st.info("ℹ️ Only PDF files are accepted. Other file types will be automatically rejected.")
 
