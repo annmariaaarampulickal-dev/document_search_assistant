@@ -13,9 +13,10 @@ A semantic document search assistant that lets you upload PDF files and search t
 5. [Running the App](#running-the-app)
 6. [Usage Example](#usage-example)
 7. [How It Works](#how-it-works)
-8. [API Reference](#api-reference)
-9. [Running the Tests](#running-the-tests)
-10. [Limitations and Next Steps](#limitations-and-next-steps)
+8. [Database Schema](#database-schema)
+9. [API Reference](#api-reference)
+10. [Running the Tests](#running-the-tests)
+11. [Limitations and Next Steps](#limitations-and-next-steps)
 
 ---
 
@@ -71,10 +72,12 @@ cd document-search-assistant
 DB_NAME=document_db
 DB_USER=postgres
 DB_PASSWORD=your_password_here
-DB_HOST=db
+DB_HOST=localhost
 DB_PORT=5432
 OPENAI_API_KEY=sk-your-openai-key-here
 ```
+
+> **Note:** When running via Docker Compose, `DB_HOST` is automatically overridden to `db` by `docker-compose.yml` — no manual change needed. Use `localhost` only when running without Docker.
 
 > `OPENAI_API_KEY` is optional. If not set, the AI answer feature will show a friendly unavailable message — everything else works normally.
 
@@ -87,6 +90,8 @@ One command starts everything:
 ```bash
 docker-compose up --build
 ```
+
+> `--build` rebuilds images if code has changed. First time setup always needs `--build`. Subsequent runs can use just `docker-compose up`.
 
 This starts three containers:
 - **PostgreSQL** database with pgvector
@@ -181,7 +186,7 @@ User question (checkbox ticked)
         │
         ├── On network error / timeout → graceful error message
         │
-        └── Return ai_answer + sources_used
+        └── Return ai_answer + sources_used (file_name, page_number per source)
 ```
 
 ### Why pgvector instead of FAISS?
@@ -198,6 +203,31 @@ Uses **cosine similarity** via pgvector's `<=>` operator with `normalize_embeddi
 
 ---
 
+## Database Schema
+
+Two tables store all document data:
+
+**`documents`** — one row per uploaded PDF
+```sql
+id          SERIAL PRIMARY KEY
+filename    TEXT NOT NULL
+upload_date TIMESTAMP DEFAULT now()
+```
+
+**`document_chunks`** — one row per text chunk with its embedding
+```sql
+id          SERIAL PRIMARY KEY
+document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE
+chunk_text  TEXT NOT NULL
+chunk_order INTEGER NOT NULL
+page_number INTEGER NOT NULL
+embedding   VECTOR(384)
+```
+
+`ON DELETE CASCADE` means deleting a document automatically deletes all its chunks and embeddings in one atomic operation — no orphaned data is ever left behind.
+
+---
+
 ## API Reference
 
 | Method | Endpoint | Description | Success Code |
@@ -210,7 +240,7 @@ Uses **cosine similarity** via pgvector's `<=>` operator with `normalize_embeddi
 | POST | `/documents/upload` | Upload PDF, chunk, embed, and store | 201 / 400 |
 | GET | `/documents/{id}/chunks` | View all text chunks for a document | 200 / 404 |
 | POST | `/ask` | Semantic search, returns top 3 passages | 200 |
-| POST | `/ask-ai` | AI-written answer from top passages | 200 / 503 |
+| POST | `/ask-ai` | AI-written answer from top passages | 200 / 500 / 502 / 503 / 504 |
 
 **Upload error cases:**
 
@@ -271,6 +301,12 @@ pytest test_utils.py -v
 ```
 Covers: chunk size limits, overlap behavior.
 
+**OpenAI connection test — requires OPENAI_API_KEY in `.env`:**
+```bash
+python test_openai.py
+```
+Covers: verifies OpenAI API key is valid and network connection to OpenAI is available.
+
 ---
 
 ## Limitations and Next Steps
@@ -282,8 +318,6 @@ Covers: chunk size limits, overlap behavior.
 - Scanned PDFs not supported — image-only PDFs have no embedded text; OCR integration would be needed
 - AI answers require an active internet connection and a valid OpenAI API key
 - No connection pooling — `psycopg_pool` would be needed under real concurrent load
-
-> **Note:** Deleting a document automatically deletes all its chunks via `ON DELETE CASCADE` — no orphaned data is ever left behind.
 
 **Possible next steps:**
 

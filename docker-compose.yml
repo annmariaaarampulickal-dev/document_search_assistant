@@ -4,7 +4,7 @@ services:
  
   # PostgreSQL with pgvector
   db:
-    image: pgvector/pgvector:pg18-trixie
+    image: pgvector/pgvector:pg16
     container_name: pgvector_db
     environment:
       POSTGRES_USER: postgres
