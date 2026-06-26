@@ -293,13 +293,13 @@ curl -X POST http://127.0.0.1:8000/ask \
 ```bash
 python test_app.py
 ```
-Covers: non-PDF file rejection, empty file rejection, semantic search response shape, unknown document ID lookup.
+Covers: non-PDF file rejection, empty file rejection, semantic search response shape and similarity scores, empty/whitespace question rejection, unknown document ID/chunks/delete lookups, AI endpoint structure validation, health check, and document list verification.
 
 **Unit tests — no server needed:**
 ```bash
 pytest test_utils.py -v
 ```
-Covers: chunk size limits, overlap behavior.
+Covers: chunk size limits, overlap behavior, overlap disabled behavior.
 
 **OpenAI connection test — requires OPENAI_API_KEY in `.env`:**
 ```bash
