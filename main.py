@@ -25,8 +25,8 @@ logging.basicConfig(
 app = FastAPI(title="Document Search Assistant")
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
-# OpenAI API Key from environment variable
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+# Groq API Key from environment variable
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 # Schemas for incoming request data
 class DocumentCreate(BaseModel):
@@ -281,9 +281,9 @@ async def ask_ai(request: QuestionRequest):
     if not request.question or not request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
-    if not OPENAI_API_KEY:
-        logging.error("OPENAI_API_KEY is not set in environment variables.")
-        raise HTTPException(status_code=500, detail="AI service is not configured. OPENAI_API_KEY missing.")
+    if not GROQ_API_KEY:
+        logging.error("GROQ_API_KEY is not set in environment variables.")
+        raise HTTPException(status_code=500, detail="AI service is not configured. GROQ_API_KEY missing.")
 
     try:
         # Step 1: Re-use the same semantic search to get top 3 passages
@@ -344,13 +344,13 @@ async def ask_ai(request: QuestionRequest):
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             ai_response = await client.post(
-                "https://api.openai.com/v1/chat/completions",
+                "https://api.groq.com/openai/v1/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "gpt-3.5-turbo",
+                    "model": "llama-3.3-70b-versatile",
                     "messages": [{"role": "user", "content": prompt}],
                     "max_tokens": 500,
                     "temperature": 0.2
@@ -358,7 +358,7 @@ async def ask_ai(request: QuestionRequest):
             )
 
         if ai_response.status_code != 200:
-            logging.error(f"OpenAI API returned error: {ai_response.text}")
+            logging.error(f"Groq API returned error: {ai_response.text}")
             raise HTTPException(status_code=502, detail="AI service returned an error. Please try again.")
 
         ai_answer = ai_response.json()["choices"][0]["message"]["content"].strip()
@@ -375,10 +375,10 @@ async def ask_ai(request: QuestionRequest):
     except HTTPException as he:
         raise he
     except httpx.ConnectError:
-        logging.error("Could not connect to OpenAI API — network may be restricted.")
+        logging.error("Could not connect to Groq API — network may be restricted.")
         raise HTTPException(status_code=503, detail="Could not connect to AI service. Network may be restricted.")
     except httpx.TimeoutException:
-        logging.error("OpenAI API request timed out.")
+        logging.error("Groq API request timed out.")
         raise HTTPException(status_code=504, detail="AI service timed out. Please try again.")
     except Exception as e:
         logging.critical(f"Unexpected error in /ask-ai endpoint: {str(e)}")

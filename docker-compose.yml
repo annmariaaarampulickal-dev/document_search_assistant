@@ -34,7 +34,7 @@ services:
       DB_NAME: document_db
       DB_USER: postgres
       DB_PASSWORD: postgres
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
     ports:
       - "8000:8000"
     depends_on:
