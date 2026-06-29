@@ -1,6 +1,6 @@
 # Document Search Assistant
 
-A semantic document search assistant that lets you upload PDF files and search their contents using natural language questions. Built with FastAPI, PostgreSQL + pgvector, SentenceTransformers, Streamlit, and Docker — upload a PDF, ask a question in plain English, and get back the three most relevant passages with page citations. Optionally generate an AI-written answer using OpenAI.
+A semantic document search assistant that lets you upload PDF files and search their contents using natural language questions. Built with FastAPI, PostgreSQL + pgvector, SentenceTransformers, Streamlit, and Docker — upload a PDF, ask a question in plain English, and get back the three most relevant passages with page citations. Optionally generate an AI-written answer using Groq.
 
 ---
 
@@ -24,7 +24,7 @@ A semantic document search assistant that lets you upload PDF files and search t
 
 Upload any PDF and the system extracts its text, splits it into overlapping chunks, converts each chunk into a semantic embedding vector using `all-MiniLM-L6-v2`, and stores everything directly in PostgreSQL using the **pgvector** extension. When you ask a question, it encodes your question the same way and finds the chunks whose meaning is closest using **cosine similarity** — returning the top 3 matching passages with their source filename and page number.
 
-Optionally, tick the **"Generate AI written answer"** checkbox to send those passages to OpenAI and get a clean, readable answer written from your documents.
+Optionally, tick the **"Generate AI written answer"** checkbox to send those passages to Groq and get a clean, readable answer written from your documents.
 
 ---
 
@@ -39,23 +39,23 @@ Optionally, tick the **"Generate AI written answer"** checkbox to send those pas
 | SentenceTransformers | Local embedding generation (`all-MiniLM-L6-v2`) |
 | PyMuPDF | PDF text extraction |
 | NLTK | Sentence-aware text chunking |
-| httpx | Async HTTP calls to OpenAI API |
+| httpx | Async HTTP calls to Groq API |
 | Streamlit | Frontend UI |
 | Docker & Docker Compose | One-command deployment |
-| OpenAI API | AI-written answers (optional) |
+| Groq API | AI-written answers (optional, free) |
 
 ---
 
 ## Prerequisites
 
 - **Docker** and **Docker Compose** installed
-- An **OpenAI API key** (optional — only needed for AI-written answers)
+- A **Groq API key** (optional — only needed for AI-written answers, free at https://console.groq.com)
 
 That's it. Everything else runs inside Docker.
 
 > **No Docker?** The app also runs locally with Python and PostgreSQL installed. Set up your `.env` file, install dependencies with `pip install -r requirements.txt`, then run `uvicorn main:app --reload` and `streamlit run app.py` in two separate terminals. You will also need to install pgvector into your PostgreSQL instance — follow the official guide at https://github.com/pgvector/pgvector — and enable it once with `CREATE EXTENSION vector;` in your database.
 
-> **No OpenAI API key?** No problem. The AI answer checkbox will show a friendly "unavailable" message. Regular semantic search works perfectly without it — nothing breaks.
+> **No Groq API key?** No problem. The AI answer checkbox will show a friendly "unavailable" message. Regular semantic search works perfectly without it — nothing breaks.
 
 ---
 
@@ -74,12 +74,12 @@ DB_USER=postgres
 DB_PASSWORD=your_password_here
 DB_HOST=localhost
 DB_PORT=5432
-OPENAI_API_KEY=sk-your-openai-key-here
+GROQ_API_KEY=gsk_your-groq-key-here
 ```
 
 > **Note:** When running via Docker Compose, `DB_HOST` is automatically overridden to `db` by `docker-compose.yml` — no manual change needed. Use `localhost` only when running without Docker.
 
-> `OPENAI_API_KEY` is optional. If not set, the AI answer feature will show a friendly unavailable message — everything else works normally.
+> `GROQ_API_KEY` is optional. If not set, the AI answer feature will show a friendly unavailable message — everything else works normally.
 
 ---
 
@@ -124,9 +124,9 @@ docker-compose down
 2. Optionally tick **"Generate AI written answer"** for a clean AI response
 3. Top 3 matching passages appear with source filename and page number
 
-**Resetting everything:**
+**Deleting documents:**
 
-Click "Reset Entire Vector System" in the left sidebar to delete all document records and embeddings. Use this to start fresh.
+To delete a document, use the `DELETE /documents/{id}` endpoint via the FastAPI interactive docs at `http://localhost:8000/docs`.
 
 ---
 
@@ -181,7 +181,7 @@ User question (checkbox ticked)
         │
         ├── Build context string from passages
         │
-        ├── Call OpenAI gpt-3.5-turbo with:
+        ├── Call Groq API (llama-3.3-70b-versatile) with:
         │     "Answer using ONLY the passages provided"
         │
         ├── On network error / timeout → graceful error message
@@ -301,11 +301,11 @@ pytest test_utils.py -v
 ```
 Covers: chunk size limits, overlap behavior, overlap disabled behavior.
 
-**OpenAI connection test — requires OPENAI_API_KEY in `.env`:**
+**Groq connection test — requires GROQ_API_KEY in `.env`:**
 ```bash
-python test_openai.py
+python test_groq.py
 ```
-Covers: verifies OpenAI API key is valid and network connection to OpenAI is available.
+Covers: verifies Groq API key is valid and network connection to Groq is available.
 
 ---
 
@@ -316,7 +316,7 @@ Covers: verifies OpenAI API key is valid and network connection to OpenAI is ava
 - No authentication — any user can upload or delete documents with no access control
 - No pagination — `GET /documents` returns all records with no limit
 - Scanned PDFs not supported — image-only PDFs have no embedded text; OCR integration would be needed
-- AI answers require an active internet connection and a valid OpenAI API key
+- AI answers require an active internet connection — on restricted networks the AI feature is unavailable but regular search works perfectly
 - No connection pooling — `psycopg_pool` would be needed under real concurrent load
 
 **Possible next steps:**
