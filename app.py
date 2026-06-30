@@ -110,6 +110,7 @@ if submitted and query_text:
                             display_text = " ".join(match['text'].strip().split())
                             st.info(display_text)
                             st.markdown(f"**Source:** `{match['file_name']}`, page {match['page_number']}")
+                            st.markdown(f"**Similarity Score:** `{match['similarity_score']}`")
 
             else:
                 st.error(f"❌ API Engine Error: {response.json().get('detail', response.text)}")
